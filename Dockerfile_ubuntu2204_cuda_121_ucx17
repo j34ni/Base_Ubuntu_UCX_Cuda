@@ -1,0 +1,78 @@
+FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
+
+# Authors Jean Iaquinta
+# Contact jeani@uio.no
+# Version v1.0.0
+#
+# This is a definition file for a container based on Ubuntu22.04 with support for UCX1.17.0 and Cuda12.1.0
+#
+# Update system and install basic packages
+RUN apt-get update -y && apt full-upgrade -y && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends autoconf automake bison binutils-dev bzip2 ca-certificates cmake flex g++ gcc gfortran git gperf libbpf-dev libcap-dev libmount-dev libssl-dev libtool make meson ninja-build pkg-config python3 python3-pip python-is-python3 vim wget xz-utils zlib1g-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Numactl version 2.0.18
+RUN wget -q -nc --no-check-certificate -P /var/tmp https://github.com/numactl/numactl/releases/download/v2.0.18/numactl-2.0.18.tar.gz && \
+    tar -x -f /var/tmp/numactl-2.0.18.tar.gz -C /var/tmp -z && \
+    cd /var/tmp/numactl-2.0.18 &&  ./configure --prefix=/usr/local/numa && \
+    make -j$(nproc) &&  make -j$(nproc) install && \
+    echo "/usr/local/numa/lib" >> /etc/ld.so.conf.d/espresso.conf && ldconfig && \
+    rm -rf /var/tmp/numactl-2.0.18 /var/tmp/numactl-2.0.18.tar.gz
+ENV LD_LIBRARY_PATH=/usr/local/numa/lib:$LD_LIBRARY_PATH \
+    LIBRARY_PATH=/usr/local/numa/lib:$LIBRARY_PATH \
+    PATH=/usr/local/numa/bin:$PATH \
+    CPATH=/usr/local/numa/include:$CPATH
+
+# Libnl version 3.2.25
+RUN wget -q -nc --no-check-certificate -P /var/tmp https://www.infradead.org/~tgr/libnl/files/libnl-3.2.25.tar.gz && \
+    tar -x -f /var/tmp/libnl-3.2.25.tar.gz -C /var/tmp -z && \
+    cd /var/tmp/libnl-3.2.25 && ./configure --prefix=/usr/local/libnl && \
+    make -j$(nproc) && make -j$(nproc) install && \
+    echo "/usr/local/libnl/lib" >> /etc/ld.so.conf.d/espresso.conf && ldconfig && \
+    rm -rf /var/tmp/libnl-3.2.25 /var/tmp/libnl-3.2.25.tar.gz
+ENV LD_LIBRARY_PATH=/usr/local/libnl/lib:$LD_LIBRARY_PATH \
+    LIBRARY_PATH=/usr/local/libnl/lib:$LIBRARY_PATH \
+    PATH=/usr/local/libnl/bin:$PATH \
+    CPATH=/usr/local/libnl/include:$CPATH \
+    PKG_CONFIG_PATH=/usr/local/libnl/lib/pkgconfig
+
+# RDMA Core version 52.0
+RUN wget -q -nc --no-check-certificate -P /var/tmp https://github.com/linux-rdma/rdma-core/releases/download/v52.0/rdma-core-52.0.tar.gz && \
+    tar -x -f /var/tmp/rdma-core-52.0.tar.gz -C /usr/local -z && \
+    cd /usr/local/rdma-core-52.0 && bash build.sh && \
+    echo "/usr/local/rdma-core-52.0/build/lib" >> /etc/ld.so.conf.d/espresso.conf && ldconfig && \
+    rm -rf /var/tmp/rdma-core-52.0.tar.gz
+ENV CPATH=/usr/local/rdma-core-52.0/build/include:$CPATH \
+    LD_LIBRARY_PATH=/usr/local/rdma-core-52.0/build/lib:$LD_LIBRARY_PATH \
+    LIBRARY_PATH=/usr/local/rdma-core-52.0/build/lib:$LIBRARY_PATH \
+    PATH=/usr/local/rdma-core-52.0/build/bin:$PATH
+
+# XPMEM branch 2.7.3
+RUN wget -q -nc --no-check-certificate -P /var/tmp https://github.com/openucx/xpmem/archive/refs/tags/v2.7.3.tar.gz && \
+    tar -x -f /var/tmp/v2.7.3.tar.gz  -C /var/tmp -z && \
+    cd /var/tmp/xpmem-2.7.3 && ./autogen.sh && CC=gcc CXX=g++ F77=gfortran FC=gfortran ./configure --prefix=/usr/local/xpmem --disable-kernel-module && \
+    make -j$(nproc) && make -j$(nproc) install && \
+    echo "/usr/local/xpmem/lib" >> /etc/ld.so.conf.d/espresso.conf && ldconfig && \
+    rm -rf /var/tmp/xpmem-2.7.3 /var/tmp/v2.7.3.tar.gz
+ENV CPATH=/usr/local/xpmem/include:$CPATH \
+    LD_LIBRARY_PATH=/usr/local/xpmem/lib:$LD_LIBRARY_PATH \
+    LIBRARY_PATH=/usr/local/xpmem/lib:$LIBRARY_PATH
+
+# UCX version 1.17.0
+RUN wget -q -nc --no-check-certificate -P /var/tmp https://github.com/openucx/ucx/releases/download/v1.17.0/ucx-1.17.0.tar.gz && \
+    tar -x -f /var/tmp/ucx-1.17.0.tar.gz -C /var/tmp -z && \
+    cd /var/tmp/ucx-1.17.0 && CC=gcc CXX=g++ F77=gfortran FC=gfortran ./configure --prefix=/usr/local/ucx --disable-assertions --enable-debug --enable-logging --disable-doxygen-doc --disable-logging --disable-params-check --enable-optimizations --with-xpmem=/usr/local/xpmem --with-knem=no --with-rdmacm=/usr/local/rdma-core-52.0/build --with-cuda=/usr/local/cuda-12.1/targets/x86_64-linux && \
+    make -j$(nproc) && make -j$(nproc) install && \
+    echo "/usr/local/ucx/lib" >> /etc/ld.so.conf.d/espresso.conf && ldconfig && \
+    rm -rf /var/tmp/ucx-1.17.0 /var/tmp/ucx-1.17.0.tar.gz
+ENV CPATH=/usr/local/ucx/include:$CPATH \
+    LD_LIBRARY_PATH=/usr/local/ucx/lib:$LD_LIBRARY_PATH \
+    LIBRARY_PATH=/usr/local/ucx/lib:$LIBRARY_PATH \
+    PATH=/usr/local/ucx/bin:$PATH
+
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs:/usr/local/cuda-12.1/compat:$LD_LIBRARY_PATH \
+    LIBRARY_PATH=/usr/local/cuda/lib64/stubs:/usr/local/cuda-12.1/compat:$LIBRARY_PATH \
+    CPATH=/usr/local/cuda-12.1/targets/x86_64-linux/include:$CPATH \
+    PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:$PATH
+
+# --------------------------------------------------------------------------------------------------------------------
